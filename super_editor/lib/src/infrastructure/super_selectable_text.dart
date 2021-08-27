@@ -211,9 +211,11 @@ class SuperSelectableTextState extends State<SuperSelectableText> implements Tex
     final lineHeightMultiplier = widget.richText.style?.height ?? 1.0;
 
     // If no text is currently displayed, we can't use a character box
-    // to measure, but we may be able to use the caret height.
-    if (widget.richText.text == null) {
-      return (_renderParagraph!.getFullHeightForCaret(position) ?? 0) * lineHeightMultiplier;
+    // to measure, but we may be able to use related metrics.
+    if (widget.richText.text == null || widget.richText.text!.isEmpty) {
+      final estimatedLineHeight =
+          _renderParagraph!.getFullHeightForCaret(position) ?? widget.richText.style?.fontSize ?? 0.0;
+      return estimatedLineHeight * lineHeightMultiplier;
     }
 
     // There is some text in this layout. Get the bounding box for the
@@ -269,6 +271,10 @@ class SuperSelectableTextState extends State<SuperSelectableText> implements Tex
   TextBox getCharacterBox(TextPosition position) {
     if (_renderParagraph == null) {
       return const TextBox.fromLTRBD(0, 0, 0, 0, TextDirection.ltr);
+    }
+    if (widget.richText.text == null || widget.richText.text!.isEmpty) {
+      final lineHeightEstimate = _renderParagraph!.getFullHeightForCaret(const TextPosition(offset: 0)) ?? 0.0;
+      return TextBox.fromLTRBD(0, 0, 0, lineHeightEstimate, TextDirection.ltr);
     }
 
     final characterPosition = position.offset >= widget.richText.text!.length

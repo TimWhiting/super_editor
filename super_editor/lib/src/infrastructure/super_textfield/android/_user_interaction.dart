@@ -160,7 +160,9 @@ class AndroidTextFieldTouchInteractorState extends State<AndroidTextFieldTouchIn
     }
 
     // Update the text selection to a collapsed selection where the user tapped.
-    widget.textController.selection = TextSelection.collapsed(offset: tapTextPosition.offset);
+    widget.textController.selection = tapTextPosition.offset >= 0
+        ? TextSelection.collapsed(offset: tapTextPosition.offset)
+        : const TextSelection.collapsed(offset: 0);
 
     widget.editingOverlayController.showHandles();
   }
@@ -201,13 +203,8 @@ class AndroidTextFieldTouchInteractorState extends State<AndroidTextFieldTouchIn
   }
 
   void _onDoubleTapDown(TapDownDetails details) {
-    _log.fine('Double tap');
+    _log.fine('_onDoubleTapDown()');
     widget.focusNode.requestFocus();
-
-    // When the user released the first tap, the toolbar was set
-    // to visible. At the beginning of a double-tap, make it invisible
-    // again.
-    widget.editingOverlayController.hideToolbar();
 
     final tapTextPosition = _getTextPositionAtOffset(details.localPosition);
     if (tapTextPosition != null) {
@@ -231,6 +228,7 @@ class AndroidTextFieldTouchInteractorState extends State<AndroidTextFieldTouchIn
   }
 
   void _onTripleTapDown(TapDownDetails details) {
+    _log.fine('_onTripleTapDown()');
     final tapTextPosition = widget.selectableTextKey.currentState!.getPositionAtOffset(details.localPosition);
 
     widget.textController.selection = widget.selectableTextKey.currentState!
@@ -382,10 +380,10 @@ class AndroidTextFieldTouchInteractorState extends State<AndroidTextFieldTouchIn
           //
           // TODO: fix the custom gesture detector in the RawGestureDetector.
         },
-        onDoubleTap: () {
-          _log.fine('Intercepting double tap');
-          // no-op
-        },
+        // onDoubleTap: () {
+        //   _log.fine('Intercepting double tap');
+        //   // no-op
+        // },
         child: DecoratedBox(
           decoration: BoxDecoration(
             border: widget.showDebugPaint ? Border.all(color: Colors.purple) : const Border(),

@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:super_editor/src/default_editor/super_editor.dart';
 import 'package:super_editor/src/infrastructure/_listenable_builder.dart';
 import 'package:super_editor/src/infrastructure/_logging.dart';
+import 'package:super_editor/src/infrastructure/attributed_spans.dart';
 import 'package:super_editor/src/infrastructure/super_selectable_text.dart';
 import 'package:super_editor/src/infrastructure/text_layout.dart';
 
@@ -1446,7 +1447,9 @@ class AttributedTextEditingController with ChangeNotifier {
     AttributedText? text,
     TextSelection? selection,
   })  : _text = text ?? AttributedText(),
-        _selection = selection ?? const TextSelection.collapsed(offset: -1);
+        _selection = selection ?? const TextSelection.collapsed(offset: -1) {
+    text?.addListener(notifyListeners);
+  }
 
   void updateTextAndSelection({
     required AttributedText text,
@@ -1474,6 +1477,129 @@ class AttributedTextEditingController with ChangeNotifier {
       }
 
       notifyListeners();
+    }
+  }
+
+  /// Inserts [newText], starting at the given [insertIndex].
+  ///
+  /// The [selection] is updated to [newSelection], if provided, otherwise
+  /// a best-guess attempt is made to adjust the selection based on an
+  /// insertion action.
+  void insert({
+    required String newText,
+    required int insertIndex,
+    TextSelection? newSelection,
+  }) {
+    final upstreamAttributions = insertIndex > 0 ? _text.spans.getAllAttributionsAt(insertIndex) : <Attribution>{};
+
+    final updatedText = _text.insertString(
+      textToInsert: newText,
+      startOffset: insertIndex,
+      applyAttributions: upstreamAttributions,
+    );
+    // We must calculate the updated position before changing the text value
+    // to avoid (possibly) automatically altering the current selection.
+    final updatedSelection = newSelection ??
+        _moveSelectionForInsertion(
+          selection: _selection,
+          insertIndex: insertIndex,
+          newTextLength: newText.length,
+        );
+
+    text = updatedText;
+    selection = updatedSelection;
+  }
+
+  /// Removes the text between [from] (inclusive) and [to] (exclusive), and replaces that
+  /// text with [newText].
+  ///
+  /// The [selection] is updated to [newSelection], if provided, otherwise
+  /// a best-guess attempt is made to adjust the selection based on an
+  /// insertion action.
+  void replace({
+    required String newText,
+    required int from,
+    required int to,
+    TextSelection? newSelection,
+  }) {
+    var updatedText = _text.removeRegion(startOffset: from, endOffset: to);
+    var updatedSelection =
+        newSelection ?? _moveSelectionForDeletion(selection: selection, deleteFrom: from, deleteTo: to);
+    updatedText = updatedText.insertString(textToInsert: newText, startOffset: from);
+    updatedSelection = newSelection ??
+        _moveSelectionForInsertion(selection: updatedSelection, insertIndex: from, newTextLength: newText.length);
+
+    text = updatedText;
+    selection = updatedSelection;
+  }
+
+  /// Removes the text between [from] (inclusive) and [to] (exclusive).
+  ///
+  /// The [selection] is updated to [newSelection], if provided, otherwise
+  /// a best-guess attempt is made to adjust the selection based on an
+  /// insertion action.
+  void delete({
+    required int from,
+    required int to,
+    TextSelection? newSelection,
+  }) {
+    final updatedText = _text.removeRegion(startOffset: from, endOffset: to);
+    // We must calculate the updated position before changing the text value
+    // to avoid (possibly) automatically altering the current selection.
+    final updatedSelection =
+        newSelection ?? _moveSelectionForDeletion(selection: _selection, deleteFrom: from, deleteTo: to);
+
+    text = updatedText;
+    selection = updatedSelection;
+  }
+
+  TextSelection _moveSelectionForInsertion({
+    required TextSelection selection,
+    required int insertIndex,
+    required int newTextLength,
+  }) {
+    int newBaseOffset = selection.baseOffset;
+    if ((selection.baseOffset == insertIndex && selection.isCollapsed) || (selection.baseOffset > insertIndex)) {
+      newBaseOffset = selection.baseOffset + newTextLength;
+    }
+
+    final newExtentOffset =
+        selection.extentOffset >= insertIndex ? selection.extentOffset + newTextLength : selection.extentOffset;
+
+    return TextSelection(
+      baseOffset: newBaseOffset,
+      extentOffset: newExtentOffset,
+    );
+  }
+
+  TextSelection _moveSelectionForDeletion({
+    required TextSelection selection,
+    required int deleteFrom,
+    required int deleteTo,
+  }) {
+    return TextSelection(
+      baseOffset: _moveCaretForDeletion(caretOffset: selection.baseOffset, deleteFrom: deleteFrom, deleteTo: deleteTo),
+      extentOffset:
+          _moveCaretForDeletion(caretOffset: selection.extentOffset, deleteFrom: deleteFrom, deleteTo: deleteTo),
+    );
+  }
+
+  int _moveCaretForDeletion({
+    required int caretOffset,
+    required int deleteFrom,
+    required int deleteTo,
+  }) {
+    if (caretOffset <= deleteFrom) {
+      return caretOffset;
+    } else if (caretOffset <= deleteTo) {
+      // The caret is sitting within the deleted text region.
+      // Move the caret to the beginning of the deleted region.
+      return deleteFrom;
+    } else {
+      // The caret is sitting beyond the deleted text region.
+      // Move the caret so that its new distance to deleteFrom
+      // is equal to its current distance from deleteTo.
+      return deleteFrom + (caretOffset - deleteTo);
     }
   }
 

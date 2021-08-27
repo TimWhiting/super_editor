@@ -23,7 +23,7 @@ class _SuperAndroidTextFieldDemoState extends State<SuperAndroidTextFieldDemo> {
   void initState() {
     super.initState();
 
-    initLoggers(Level.INFO, [textFieldLog, androidTextFieldLog]);
+    initLoggers(Level.FINE, [textFieldLog, androidTextFieldLog]);
   }
 
   @override

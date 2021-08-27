@@ -374,6 +374,12 @@ class _SuperIOSTextfieldState extends State<SuperIOSTextfield>
   }
 
   @override
+  void updateEditingValueWithDeltas(List<TextEditingDelta> deltas) {
+    // TODO: implement updateEditingValueWithDeltas
+    print('Received deltas');
+  }
+
+  @override
   void updateFloatingCursor(RawFloatingCursorPoint point) {
     _floatingCursorController.updateFloatingCursor(_textContentKey.currentState!, point);
   }

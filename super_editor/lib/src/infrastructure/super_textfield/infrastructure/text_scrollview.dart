@@ -165,6 +165,8 @@ class _TextScrollViewState extends State<TextScrollView>
   @override
   bool get isMultiline => widget.maxLines == null || widget.maxLines! > 1;
 
+  bool get isBounded => widget.maxLines != null;
+
   @override
   double get startScrollOffset => 0.0;
 
@@ -276,13 +278,20 @@ class _TextScrollViewState extends State<TextScrollView>
   bool _updateViewportHeight() {
     _log.fine('Updating viewport height...');
     final linesOfText = _getLineCount();
+    _log.fine(' - lines of text: $linesOfText');
     final estimatedContentHeight = linesOfText * widget.lineHeight!;
-    final minHeight = widget.minLines != null ? widget.minLines! * widget.lineHeight! : null;
+    _log.fine(' - estimated content height: $estimatedContentHeight');
+    final minHeight = widget.minLines != null
+        ? widget.minLines! * widget.lineHeight!
+        : widget.lineHeight; // Can't be shorter than 1 line
     final maxHeight = widget.maxLines != null ? widget.maxLines! * widget.lineHeight! : null;
+    _log.fine(' - minHeight: $minHeight, maxHeight: $maxHeight');
     double? viewportHeight;
-    if (maxHeight != null && estimatedContentHeight > maxHeight) {
+    if (maxHeight != null && estimatedContentHeight >= maxHeight) {
+      _log.fine(' - setting viewport height to maxHeight');
       viewportHeight = maxHeight;
-    } else if (minHeight != null && estimatedContentHeight < minHeight) {
+    } else if (minHeight != null && estimatedContentHeight <= minHeight) {
+      _log.fine(' - setting viewport height to minheight');
       viewportHeight = minHeight;
     }
 
@@ -292,13 +301,43 @@ class _TextScrollViewState extends State<TextScrollView>
       return false;
     }
 
-    setState(() {
-      _log.fine(' - new viewport height: $viewportHeight');
-      _needViewportHeight = false;
-      _viewportHeight = viewportHeight;
-    });
+    if (viewportHeight == null && isMultiline && !isBounded) {
+      // We don't have a viewport height, but we're multiline and
+      // unbounded so a null viewport height is fine. We'll wrap
+      // the intrinsic height of the text.
+      _log.fine(' - viewport height is null, but TextScrollView is unbounded so that is OK');
+      final didChange = viewportHeight != _viewportHeight;
+      if (mounted) {
+        setState(() {
+          _needViewportHeight = false;
+          _viewportHeight = null;
+        });
+      }
+      return didChange;
+    }
 
-    return true;
+    if (viewportHeight != null) {
+      setState(() {
+        _log.fine(' - new viewport height: $viewportHeight');
+        _needViewportHeight = false;
+        _viewportHeight = viewportHeight;
+      });
+
+      return true;
+    } else {
+      _log.fine(' - could not calculate a viewport height. Rescheduling calculation.');
+
+      // We still don't have a resolved viewport height. Run again next frame.
+      WidgetsBinding.instance!.addPostFrameCallback((timeStamp) {
+        if (mounted) {
+          setState(() {
+            _updateViewportHeight();
+          });
+        }
+      });
+
+      return false;
+    }
   }
 
   int _getLineCount() {
@@ -325,9 +364,7 @@ class _TextScrollViewState extends State<TextScrollView>
       // to re-calculate the height after initial layout.
       WidgetsBinding.instance!.addPostFrameCallback((timeStamp) {
         if (mounted) {
-          setState(() {
-            _updateViewportHeight();
-          });
+          _updateViewportHeight();
         }
       });
     }
@@ -335,6 +372,7 @@ class _TextScrollViewState extends State<TextScrollView>
     return Opacity(
       opacity: (widget.maxLines != null && widget.maxLines! > 1 && _viewportHeight == null) ? 0.0 : 1.0,
       child: SizedBox(
+        width: double.infinity,
         height: _viewportHeight,
         child: Stack(
           children: [

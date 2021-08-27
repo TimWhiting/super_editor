@@ -120,9 +120,11 @@ class _AndroidEditingOverlayControlsState extends State<AndroidEditingOverlayCon
     // appearance/disappearance. Reflow the layout. Use a post-frame callback
     // to give the rest of the UI a chance to reflow, first.
     WidgetsBinding.instance!.addPostFrameCallback((timeStamp) {
-      setState(() {
-        // no-op
-      });
+      if (mounted) {
+        setState(() {
+          // no-op
+        });
+      }
     });
   }
 
@@ -273,6 +275,8 @@ class _AndroidEditingOverlayControlsState extends State<AndroidEditingOverlayCon
       widget.editingController.hideMagnifier();
 
       if (!widget.editingController.textController.selection.isCollapsed) {
+        // We hid the toolbar while dragging a handle. If the selection is
+        // expanded, show it again.
         widget.editingController.showToolbar();
       } else {
         // The collapsed handle should disappear after some inactivity.

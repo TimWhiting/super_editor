@@ -8,8 +8,8 @@ import 'package:super_editor/src/infrastructure/platform_detector.dart';
 import 'package:super_editor/src/infrastructure/super_selectable_text.dart';
 import 'package:super_editor/src/infrastructure/super_textfield/super_textfield.dart';
 
-import '../_text_entry_test_tools.dart';
-import '_platform_test_tools.dart';
+import '../../_text_entry_test_tools.dart';
+import '../_platform_test_tools.dart';
 
 void main() {
   group('SuperTextField', () {

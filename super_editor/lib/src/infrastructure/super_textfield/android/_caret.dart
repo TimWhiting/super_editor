@@ -2,14 +2,19 @@ import 'package:flutter/widgets.dart';
 import 'package:super_editor/src/infrastructure/super_selectable_text.dart';
 import 'package:super_editor/src/infrastructure/text_layout.dart';
 
-class AndroidTextControlsFactory implements TextCaretFactory {
-  AndroidTextControlsFactory({
+/// Factory that creates an Android-style caret to be displayed in
+/// a [SuperSelectableText] widget.
+class AndroidTextCaretFactory implements TextCaretFactory {
+  AndroidTextCaretFactory({
     required Color color,
+    required double emptyTextCaretHeight,
     BorderRadius borderRadius = BorderRadius.zero,
   })  : _color = color,
+        _emptyTextCaretHeight = emptyTextCaretHeight,
         _borderRadius = borderRadius;
 
   final Color _color;
+  final double _emptyTextCaretHeight;
   final BorderRadius _borderRadius;
 
   @override
@@ -23,6 +28,7 @@ class AndroidTextControlsFactory implements TextCaretFactory {
     return AndroidTextFieldCaret(
       textLayout: textLayout,
       isTextEmpty: isTextEmpty,
+      emptyTextCaretHeight: _emptyTextCaretHeight,
       selection: selection,
       caretColor: _color,
       caretBorderRadius: _borderRadius,
@@ -42,17 +48,33 @@ class AndroidTextFieldCaret extends StatefulWidget {
     Key? key,
     required this.textLayout,
     required this.isTextEmpty,
+    required this.emptyTextCaretHeight,
     required this.selection,
     required this.caretColor,
     this.caretWidth = 2.0,
     this.caretBorderRadius = BorderRadius.zero,
   }) : super(key: key);
 
+  /// The laid-out text upon which the caret is painted.
   final TextLayout textLayout;
+
+  /// Whether the text in the associated [SuperSelectableText] is empty.
   final bool isTextEmpty;
+
+  /// The height of the caret when the text is empty, i.e., there is no
+  /// text to measure.
+  final double emptyTextCaretHeight;
+
+  /// The current text selection of the associated [SuperSelectableText].
   final TextSelection selection;
+
+  /// The color of the caret.
   final Color caretColor;
+
+  /// The width of the caret.
   final double caretWidth;
+
+  /// The border radius of the caret.
   final BorderRadius caretBorderRadius;
 
   @override
@@ -94,11 +116,13 @@ class _AndroidTextFieldCaretState extends State<AndroidTextFieldCaret> with Sing
         selection: widget.selection,
         caretColor: widget.caretColor,
         isTextEmpty: widget.isTextEmpty,
+        emptyTextCaretHeight: widget.emptyTextCaretHeight,
       ),
     );
   }
 }
 
+/// A [CustomPainter] that paints an Android-style caret.
 class AndroidCursorPainter extends CustomPainter {
   AndroidCursorPainter({
     required this.blinkController,
@@ -108,6 +132,7 @@ class AndroidCursorPainter extends CustomPainter {
     required this.selection,
     required this.caretColor,
     required this.isTextEmpty,
+    required this.emptyTextCaretHeight,
   })  : caretPaint = Paint()..color = caretColor,
         super(repaint: blinkController);
 
@@ -117,6 +142,7 @@ class AndroidCursorPainter extends CustomPainter {
   final double width;
   final BorderRadius borderRadius;
   final bool isTextEmpty;
+  final double emptyTextCaretHeight;
   final Color caretColor;
   final Paint caretPaint;
 
@@ -142,9 +168,8 @@ class AndroidCursorPainter extends CustomPainter {
   }) {
     caretPaint.color = caretColor.withOpacity(blinkController.opacity);
 
-    final caretHeight = textLayout.getLineHeightAtPosition(selection.extent);
-
-    Offset caretOffset = isTextEmpty ? Offset.zero : textLayout.getOffsetAtPosition(selection.extent);
+    double caretHeight = textLayout.getHeightForCaret(selection.extent) ?? emptyTextCaretHeight;
+    final caretOffset = textLayout.getOffsetAtPosition(selection.extent);
 
     if (borderRadius == BorderRadius.zero) {
       canvas.drawRect(

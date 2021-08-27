@@ -5,6 +5,7 @@ import 'package:super_editor/src/infrastructure/_listenable_builder.dart';
 import 'package:super_editor/src/infrastructure/_logging.dart';
 import 'package:super_editor/src/infrastructure/super_textfield/android/_editing_controls.dart';
 import 'package:super_editor/src/infrastructure/super_textfield/android/_user_interaction.dart';
+import 'package:super_editor/src/infrastructure/super_textfield/infrastructure/hint_text.dart';
 import 'package:super_editor/src/infrastructure/super_textfield/infrastructure/text_scrollview.dart';
 import 'package:super_editor/super_editor.dart';
 
@@ -19,12 +20,14 @@ class SuperAndroidTextfield extends StatefulWidget {
     Key? key,
     this.focusNode,
     this.textController,
+    this.textStyleBuilder = defaultStyleBuilder,
+    this.hintText,
+    this.hintTextStyleBuilder = defaultHintStyleBuilder,
+    this.minLines,
+    this.maxLines = 1,
     required this.caretColor,
     required this.selectionColor,
     required this.handlesColor,
-    this.textStyleBuilder = defaultStyleBuilder,
-    this.minLines,
-    this.maxLines = 1,
     this.lineHeight,
     this.textInputAction = TextInputAction.done,
     this.showDebugPaint = false,
@@ -43,6 +46,13 @@ class SuperAndroidTextfield extends StatefulWidget {
   /// Text style factory that creates styles for the content in
   /// [textController] based on the attributions in that content.
   final AttributionStyleBuilder textStyleBuilder;
+
+  /// Text displayed when the text field has no content.
+  final AttributedText? hintText;
+
+  /// Text style factory that creates styles for the [hintText],
+  /// which is displayed when [textController] is empty.
+  final AttributionStyleBuilder hintTextStyleBuilder;
 
   /// Color of the caret.
   final Color caretColor;
@@ -120,6 +130,7 @@ class _SuperAndroidTextfieldState extends State<SuperAndroidTextfield>
 
   late AttributedTextEditingController _textEditingController;
   TextInputConnection? _textInputConnection;
+  TextEditingValue? _latestPlatformTextEditingValue;
 
   final _magnifierLayerLink = LayerLink();
   late AndroidEditingOverlayController _editingOverlayController;
@@ -141,8 +152,7 @@ class _SuperAndroidTextfieldState extends State<SuperAndroidTextfield>
       _showEditingControlsOverlay();
     }
 
-    _textEditingController = (widget.textController ?? AttributedTextEditingController())
-      ..addListener(_sendEditingValueToPlatform);
+    _textEditingController = (widget.textController ?? AttributedTextEditingController())..addListener(_onTextChanged);
 
     _textScrollController = TextScrollController(
       textController: _textEditingController,
@@ -176,13 +186,13 @@ class _SuperAndroidTextfieldState extends State<SuperAndroidTextfield>
     }
 
     if (widget.textController != oldWidget.textController) {
-      _textEditingController.removeListener(_sendEditingValueToPlatform);
+      _textEditingController.removeListener(_onTextChanged);
       if (widget.textController != null) {
         _textEditingController = widget.textController!;
       } else {
         _textEditingController = AttributedTextEditingController();
       }
-      _textEditingController.addListener(_sendEditingValueToPlatform);
+      _textEditingController.addListener(_onTextChanged);
       _sendEditingValueToPlatform();
     }
 
@@ -212,7 +222,7 @@ class _SuperAndroidTextfieldState extends State<SuperAndroidTextfield>
   void dispose() {
     _removeEditingOverlayControls();
 
-    _textEditingController.removeListener(_sendEditingValueToPlatform);
+    _textEditingController.removeListener(_onTextChanged);
     if (widget.textController == null) {
       _textEditingController.dispose();
     }
@@ -240,6 +250,7 @@ class _SuperAndroidTextfieldState extends State<SuperAndroidTextfield>
               this,
               TextInputConfiguration(
                 inputAction: widget.textInputAction,
+                enableDeltaModel: true,
               ));
           _textInputConnection!
             ..show()
@@ -257,6 +268,15 @@ class _SuperAndroidTextfieldState extends State<SuperAndroidTextfield>
         _removeEditingOverlayControls();
       });
     }
+  }
+
+  void _onTextChanged() {
+    print('_onTextChanged: selection: ${_textEditingController.selection}');
+    if (_textEditingController.selection.isCollapsed) {
+      _editingOverlayController.hideToolbar();
+    }
+
+    _sendEditingValueToPlatform();
   }
 
   void _onTextScrollChange() {
@@ -302,7 +322,9 @@ class _SuperAndroidTextfieldState extends State<SuperAndroidTextfield>
   }
 
   void _sendEditingValueToPlatform() {
-    if (_textInputConnection != null && _textInputConnection!.attached) {
+    if (_textInputConnection != null &&
+        _textInputConnection!.attached &&
+        _latestPlatformTextEditingValue != currentTextEditingValue) {
       _textInputConnection!.setEditingState(currentTextEditingValue!);
     }
   }
@@ -344,8 +366,49 @@ class _SuperAndroidTextfieldState extends State<SuperAndroidTextfield>
 
   @override
   void updateEditingValue(TextEditingValue value) {
-    _textEditingController.text = AttributedText(text: value.text);
-    _textEditingController.selection = value.selection;
+    _latestPlatformTextEditingValue = value;
+    _log.fine('New platform TextEditingValue: $value');
+
+    if (_latestPlatformTextEditingValue != currentTextEditingValue) {
+      _textEditingController.text = AttributedText(text: value.text);
+      _textEditingController.selection = value.selection;
+    }
+  }
+
+  @override
+  void updateEditingValueWithDeltas(List<TextEditingDelta> deltas) {
+    _log.fine('Received text editing deltas from platform...');
+    for (final delta in deltas) {
+      _log.fine(
+          'Text delta: ${delta.deltaType}, range: ${delta.deltaRange}, new selection: ${delta.selection}, new composing: ${delta.composing}');
+      switch (delta.deltaType) {
+        case TextEditingDeltaType.insertion:
+          _textEditingController.insert(
+            newText: delta.deltaText,
+            insertIndex: delta.deltaRange.start,
+            newSelection: delta.selection,
+          );
+          break;
+        case TextEditingDeltaType.deletion:
+          _textEditingController.delete(
+            from: delta.deltaRange.start,
+            to: delta.deltaRange.end + 1,
+            newSelection: delta.selection,
+          );
+          break;
+        case TextEditingDeltaType.replacement:
+          _textEditingController.replace(
+            newText: delta.deltaText,
+            from: delta.deltaRange.start,
+            to: delta.deltaRange.end + 1,
+            newSelection: delta.selection,
+          );
+          break;
+        case TextEditingDeltaType.equality:
+          // no-op
+          break;
+      }
+    }
   }
 
   @override
@@ -357,6 +420,7 @@ class _SuperAndroidTextfieldState extends State<SuperAndroidTextfield>
   void connectionClosed() {
     _log.info('TextInputClient: connectionClosed()');
     _textInputConnection = null;
+    _latestPlatformTextEditingValue = null;
   }
 
   @override
@@ -389,10 +453,15 @@ class _SuperAndroidTextfieldState extends State<SuperAndroidTextfield>
             child: ListenableBuilder(
               listenable: _textEditingController,
               builder: (context) {
+                final styleBuilder =
+                    _textEditingController.text.text.isNotEmpty ? widget.textStyleBuilder : widget.hintTextStyleBuilder;
+
                 final textSpan = _textEditingController.text.text.isNotEmpty
-                    ? _textEditingController.text.computeTextSpan(widget.textStyleBuilder)
-                    : AttributedText(text: 'enter text').computeTextSpan(
-                        (attributions) => widget.textStyleBuilder(attributions).copyWith(color: Colors.grey));
+                    ? _textEditingController.text.computeTextSpan(styleBuilder)
+                    : widget.hintText?.computeTextSpan(widget.hintTextStyleBuilder) ?? const TextSpan();
+
+                final emptyTextCaretHeight =
+                    (widget.textStyleBuilder({}).fontSize ?? 0.0) * (widget.textStyleBuilder({}).height ?? 1.0);
 
                 return CompositedTransformTarget(
                   link: _textContentLayerLink,
@@ -408,9 +477,9 @@ class _SuperAndroidTextfieldState extends State<SuperAndroidTextfield>
                         textSelection: _textEditingController.selection,
                         textSelectionDecoration: TextSelectionDecoration(selectionColor: widget.selectionColor),
                         showCaret: true,
-                        textCaretFactory: IOSTextFieldCaretFactory(
+                        textCaretFactory: AndroidTextCaretFactory(
                           color: widget.caretColor,
-                          width: 2,
+                          emptyTextCaretHeight: emptyTextCaretHeight,
                         ),
                       ),
                     ],

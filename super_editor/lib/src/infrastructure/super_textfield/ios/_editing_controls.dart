@@ -113,9 +113,11 @@ class _IOSEditingControlsState extends State<IOSEditingControls> with WidgetsBin
     // appearance/disappearance. Reflow the layout. Use a post-frame callback
     // to give the rest of the UI a chance to reflow, first.
     WidgetsBinding.instance!.addPostFrameCallback((timeStamp) {
-      setState(() {
-        // no-op
-      });
+      if (mounted) {
+        setState(() {
+          // no-op
+        });
+      }
     });
   }
 
